@@ -1,57 +1,174 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Bounce Runner</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap');
-      
-      body {
-        margin: 0;
-        padding: 0;
-        overflow: hidden;
-        background-color: #0f0f17;
-        font-family: 'Space Grotesk', sans-serif;
-        touch-action: none; /* Prevent standard mobile scroll/zoom */
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Bounce Runner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Micro 5 Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Micro+5&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      font-family: 'Micro 5', monospace;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0f0f17;
+      font-family: 'Micro 5', monospace;
+      touch-action: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Custom scrollbar hide */
+    ::-webkit-scrollbar {
+      display: none;
+    }
+
+    .pixel-blast-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .start-btn {
+      border: 2px solid #733DF2;
+      box-shadow: 0 0 12px #733DF2;
+      animation: pulseGlow 1.5s infinite ease-in-out;
+      position: relative;
+      overflow: hidden;
+    }
+
+    @keyframes pulseGlow {
+      0% {
+        box-shadow: 0 0 6px #733DF2, inset 0 0 10px rgba(115, 61, 242, 0.2);
+        border-color: #733DF2;
       }
 
-      /* Custom scrollbar hide for cleaner UI if needed */
-      ::-webkit-scrollbar {
-        display: none;
+      50% {
+        box-shadow: 0 0 25px #00aaff, inset 0 0 20px rgba(0, 170, 255, 0.4);
+        border-color: #00aaff;
       }
 
-      .pixel-blast-container {
-        width: 100%;
-        height: 100%;
-        position: relative;
-        overflow: hidden;
+      100% {
+        box-shadow: 0 0 6px #733DF2, inset 0 0 10px rgba(115, 61, 242, 0.2);
+        border-color: #733DF2;
+      }
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
       }
 
-      .start-btn {
-        border: 2px solid #733DF2;
-        box-shadow: 0 0 12px #733DF2;
-        animation: pulseGlow 1.5s infinite ease-in-out;
-        position: relative;
-        overflow: hidden;
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in-up {
+      animation: fadeInUp 0.5s ease-out forwards;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
       }
 
-      @keyframes pulseGlow {
-        0% { 
-          box-shadow: 0 0 6px #733DF2, inset 0 0 10px rgba(115, 61, 242, 0.2); 
-          border-color: #733DF2;
+      to {
+        opacity: 1;
+      }
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    @keyframes themeFlash {
+      0% {
+        opacity: 0.6;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.3;
+        transform: scale(1.02);
+      }
+
+      100% {
+        opacity: 0;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes themeUnlock {
+      0% {
+        transform: scale(0.8);
+        opacity: 0;
+      }
+
+      50% {
+        transform: scale(1.2);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    .theme-flash {
+      animation: themeFlash 0.5s ease-out forwards;
+    }
+
+    .theme-unlock {
+      animation: themeUnlock 0.6s ease-out forwards;
+    }
+
+    /* Scrolling leaderboard animation */
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .slide-up {
+      animation: slideUp 0.3s ease-out forwards;
+    }
+  </style>
+
+  <script>
+    // Configure Tailwind to use Micro 5 as default font
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            'sans': ['"Micro 5"', 'monospace'],
+            'mono': ['"Micro 5"', 'monospace'],
+          }
         }
-        50% { 
-          box-shadow: 0 0 25px #00aaff, inset 0 0 20px rgba(0, 170, 255, 0.4); 
-          border-color: #00aaff;
-        }
-        100% { 
-          box-shadow: 0 0 6px #733DF2, inset 0 0 10px rgba(115, 61, 242, 0.2); 
-          border-color: #733DF2;
-        }
       }
-    </style>
+    }
+  </script>
+
   <script type="importmap">
 {
   "imports": {
@@ -64,8 +181,10 @@
 }
 </script>
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
 </html>

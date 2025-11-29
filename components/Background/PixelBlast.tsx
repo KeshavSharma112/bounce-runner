@@ -668,6 +668,14 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     speed
   ])
 
+  // Update color smoothly without reinitializing
+  useEffect(() => {
+    if (threeRef.current && threeRef.current.uniforms) {
+      const colorObj = new THREE.Color(color)
+      threeRef.current.uniforms.uColor.value.copy(colorObj)
+    }
+  }, [color])
+
   // Intersection Observer for visibility detection
   useEffect(() => {
     const container = containerRef.current

@@ -4,7 +4,6 @@ import {
   Player,
   Platform,
   Particle,
-  Theme,
   BackgroundElement,
   SaveData,
   FloatingText
@@ -22,21 +21,22 @@ import {
   DOUBLE_JUMP_FORCE,
   MAX_JUMP_FRAMES,
   MAX_JUMPS,
-  DASH_SPEED,
   DASH_COOLDOWN,
   STORAGE_KEY_DATA,
   PLATFORM_BUFFER_COUNT,
   THEMES,
   PLATFORM_TYPES,
   FLOATING_TEXT_LIFESPAN,
-  MAX_PIXEL_RATIO
+  getThemeForDistance,
+  getHighestUnlockedThemeId,
+  getInterpolatedThemeColor
 } from '../../constants'
 import {
   generatePlatform,
   updatePlayer,
   drawGame,
   createExplosion,
-  updateBackgroundElements,
+  createThemeTransitionEffect,
   getSpeedMultiplier,
   checkItemCollisions,
   updateParticles,
@@ -53,14 +53,27 @@ const BounceRunner: React.FC = () => {
   const [status, setStatus] = useState<GameStatus>(GameStatus.MENU)
   const [score, setScore] = useState(0)
   const [currentFPS, setCurrentFPS] = useState(60)
+  const [coins, setCoins] = useState(0)
+  const [combo, setCombo] = useState(0)
+  const [maxCombo, setMaxCombo] = useState(0)
 
   // Performance quality state
   const [backgroundEnabled, setBackgroundEnabled] = useState(true)
 
   // Persistence State
   const [highScore, setHighScore] = useState(0)
-  const [unlockedThemes, setUnlockedThemes] = useState<string[]>(['default'])
-  const [currentThemeId, setCurrentThemeId] = useState<string>('default')
+
+  // Current theme - changes automatically during gameplay based on distance
+  const [currentThemeId, setCurrentThemeId] = useState<string>('white')
+
+  // Flash effect for theme transitions
+  const [themeFlash, setThemeFlash] = useState(false)
+
+  // Dynamic background color based on score progress
+  const [backgroundColor, setBackgroundColor] = useState<string>('#FFFFFF')
+
+  // Track max combo with ref to avoid closure issues
+  const maxComboRef = useRef(0)
 
   // Mutable game state
   const gameState = useRef({
@@ -82,47 +95,55 @@ const BounceRunner: React.FC = () => {
     bgElements: [] as BackgroundElement[],
     floatingTexts: [] as FloatingText[],
     baseSpeed: INITIAL_SPEED,
-    tick: 0, // Global frame counter for waves
+    tick: 0,
     cameraX: 0,
     score: 0,
     bonusScore: 0,
+    coinsCollected: 0,
     isRunning: false,
     isHoldingJump: false,
     lastUpdateTime: performance.now(),
+    currentThemeId: 'white',
   })
 
-  // Load Data
+  // Load Data on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_DATA)
       if (saved) {
         const data: SaveData = JSON.parse(saved)
-        setHighScore(data.highScore || 0)
-        setUnlockedThemes(data.unlockedThemes || ['default'])
-        setCurrentThemeId(data.selectedThemeId || 'default')
+        const loadedHighScore = data.highScore || 0
+        setHighScore(loadedHighScore)
+
+        // Set starting theme based on highest unlocked (from high score)
+        const startingTheme = getHighestUnlockedThemeId(loadedHighScore)
+        setCurrentThemeId(startingTheme)
+        gameState.current.currentThemeId = startingTheme
+
+        console.log(`Loaded high score: ${loadedHighScore}, starting theme: ${startingTheme}`)
       }
     } catch (e) {
       console.warn('Failed to load save data', e)
     }
 
-    // Check performance settings on mount
     const settings = performanceManager.getSettings()
     setBackgroundEnabled(settings.backgroundQuality !== 'off')
   }, [])
 
   // Save Data Helper
-  const persistData = (newHighScore: number, newUnlockedThemes: string[]) => {
+  const persistData = (newHighScore: number) => {
+    const bestTheme = getHighestUnlockedThemeId(newHighScore)
     const data: SaveData = {
       highScore: newHighScore,
-      unlockedThemes: newUnlockedThemes,
-      selectedThemeId: currentThemeId,
-      totalDistance: 0 // Could track lifetime stats here
+      unlockedThemes: [],
+      selectedThemeId: bestTheme,
+      totalDistance: 0
     }
     localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data))
+    console.log(`Saved high score: ${newHighScore}, best theme: ${bestTheme}`)
   }
 
   const initGame = useCallback(() => {
-    // Start Audio
     audioManager.init()
     audioManager.resume()
 
@@ -140,6 +161,12 @@ const BounceRunner: React.FC = () => {
     for (let i = 0; i < PLATFORM_BUFFER_COUNT; i++) {
       platforms.push(generatePlatform(platforms[platforms.length - 1], 1))
     }
+
+    // Start with the highest unlocked theme based on high score
+    const startingTheme = getHighestUnlockedThemeId(highScore)
+    setCurrentThemeId(startingTheme)
+
+    console.log(`Starting game with theme: ${startingTheme} (high score: ${highScore})`)
 
     gameState.current = {
       player: {
@@ -169,30 +196,33 @@ const BounceRunner: React.FC = () => {
       cameraX: -PLAYER_X_OFFSET,
       score: 0,
       bonusScore: 0,
+      coinsCollected: 0,
       isRunning: true,
       isHoldingJump: false,
       lastUpdateTime: performance.now(),
+      currentThemeId: startingTheme,
     }
 
     setStatus(GameStatus.PLAYING)
     setScore(0)
-  }, [])
+    setCoins(0)
+    setCombo(0)
+    setMaxCombo(0)
+    maxComboRef.current = 0
+  }, [highScore])
 
   const handleJumpStart = useCallback(() => {
-    const { isRunning, player } = gameState.current
+    const { isRunning, player, currentThemeId: stateThemeId } = gameState.current
 
-    // Init audio context on first interaction if blocked
     audioManager.resume()
-
     gameState.current.isHoldingJump = true
 
     if (!isRunning) return
 
-    const theme = THEMES.find(t => t.id === currentThemeId) || THEMES[0]
+    const theme = THEMES.find(t => t.id === stateThemeId) || THEMES[0]
     const settings = performanceManager.getSettings()
     const particleMultiplier = settings.reducedParticles ? 0.5 : 1.0
 
-    // First jump - from ground
     if (player.isGrounded) {
       player.vy = JUMP_FORCE
       player.isGrounded = false
@@ -206,22 +236,18 @@ const BounceRunner: React.FC = () => {
       )
 
       audioManager.playJump()
-    }
-    // Double jump - in air
-    else if (!player.isGrounded && player.canDoubleJump && player.jumpCount < MAX_JUMPS) {
+    } else if (!player.isGrounded && player.canDoubleJump && player.jumpCount < MAX_JUMPS) {
       player.vy = DOUBLE_JUMP_FORCE
       player.isJumping = true
       player.jumpHoldTimer = MAX_JUMP_FRAMES
       player.jumpCount = 2
       player.canDoubleJump = false
 
-      // Create spectacular double jump effect
       gameState.current.particles.push(
         ...createExplosion(player.x + player.width / 2, player.y + player.height / 2, theme.accent, particleMultiplier),
         ...createExplosion(player.x + player.width / 2, player.y + player.height / 2, '#FFFFFF', particleMultiplier * 0.5)
       )
 
-      // Visual feedback for double jump
       gameState.current.floatingTexts.push({
         x: player.x + player.width / 2,
         y: player.y + player.height / 2,
@@ -233,29 +259,25 @@ const BounceRunner: React.FC = () => {
 
       audioManager.playJump()
     }
-  }, [currentThemeId])
+  }, [])
 
   const handleJumpEnd = useCallback(() => {
     gameState.current.isHoldingJump = false
   }, [])
 
   const handleDash = useCallback(() => {
-    const { isRunning, player } = gameState.current
+    const { isRunning, player, currentThemeId: stateThemeId } = gameState.current
 
     if (!isRunning) return
-
-    // Check if dash is available
     if (player.dashCooldown > 0) return
 
-    const theme = THEMES.find(t => t.id === currentThemeId) || THEMES[0]
+    const theme = THEMES.find(t => t.id === stateThemeId) || THEMES[0]
     const settings = performanceManager.getSettings()
     const particleMultiplier = settings.reducedParticles ? 0.5 : 1.0
 
-    // Activate dash
     player.isDashing = true
     player.dashCooldown = DASH_COOLDOWN
 
-    // Create spectacular dash effect trail
     const dashParticleCount = Math.floor(20 * particleMultiplier)
     for (let i = 0; i < dashParticleCount; i++) {
       gameState.current.particles.push({
@@ -269,7 +291,6 @@ const BounceRunner: React.FC = () => {
       })
     }
 
-    // Visual feedback
     gameState.current.floatingTexts.push({
       x: player.x + player.width / 2,
       y: player.y + player.height / 2,
@@ -279,16 +300,14 @@ const BounceRunner: React.FC = () => {
       vy: -2
     })
 
-    // Play jump sound for now (could add dash sound)
     audioManager.playJump()
 
-    // Dash effect will be applied in the update loop
     setTimeout(() => {
       if (gameState.current.player) {
         gameState.current.player.isDashing = false
       }
-    }, 150) // Dash lasts 150ms
-  }, [currentThemeId])
+    }, 150)
+  }, [])
 
   // Input Listeners
   useEffect(() => {
@@ -303,7 +322,6 @@ const BounceRunner: React.FC = () => {
         e.preventDefault()
         if (status === GameStatus.PLAYING) handleDash()
       }
-      // Geometry Dash style instant restart with R key
       if (e.code === 'KeyR') {
         e.preventDefault()
         if (status === GameStatus.PLAYING || status === GameStatus.GAME_OVER) {
@@ -317,15 +335,13 @@ const BounceRunner: React.FC = () => {
         handleJumpEnd()
       }
     }
-    const handleStart = (e: Event) => {
-      // e.preventDefault() // removed to allow button clicks in menu
+    const handleStart = () => {
       if (status === GameStatus.PLAYING) handleJumpStart()
     }
     const handleEnd = () => handleJumpEnd()
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
-    // Bind to window for global game input
     window.addEventListener('mousedown', handleStart)
     window.addEventListener('mouseup', handleEnd)
     window.addEventListener('touchstart', handleStart, { passive: false })
@@ -341,7 +357,7 @@ const BounceRunner: React.FC = () => {
     }
   }, [status, initGame, handleJumpStart, handleJumpEnd, handleDash])
 
-  // Main Loop with Frame-Rate Independence
+  // Main Loop
   const loop = useCallback((currentTime: number) => {
     const state = gameState.current
     const canvas = canvasRef.current
@@ -352,18 +368,13 @@ const BounceRunner: React.FC = () => {
       return
     }
 
-    // Calculate delta time and time factor for frame-rate independence
-    const deltaTime = Math.min(currentTime - state.lastUpdateTime, 50) // Cap at 50ms to prevent physics explosions
+    const deltaTime = Math.min(currentTime - state.lastUpdateTime, 50)
     state.lastUpdateTime = currentTime
-
-    // Time factor: 1.0 = 60fps, 2.0 = 30fps, 0.5 = 120fps
     const timeFactor = deltaTime / (1000 / 60)
 
-    // Update FPS display periodically
     if (Math.floor(currentTime / 1000) !== Math.floor((currentTime - deltaTime) / 1000)) {
       setCurrentFPS(Math.round(1000 / deltaTime))
 
-      // Check if we need to adjust quality
       const settings = performanceManager.getSettings()
       if (settings.backgroundQuality === 'off' && backgroundEnabled) {
         setBackgroundEnabled(false)
@@ -371,18 +382,15 @@ const BounceRunner: React.FC = () => {
     }
 
     if (state.isRunning) {
-      state.tick += timeFactor // Frame-rate independent tick
+      state.tick += timeFactor
 
-      // 1. Difficulty & Speed Phase
       if (state.baseSpeed < MAX_SPEED) {
         state.baseSpeed += SPEED_INCREMENT * timeFactor
       }
       const speedMultiplier = getSpeedMultiplier(state.tick)
 
-      // Update Audio Drone
       audioManager.updateDrone((state.baseSpeed * speedMultiplier) / MAX_SPEED)
 
-      // 2. Physics with frame-rate independence
       const wasGrounded = state.player.isGrounded
       const { updatedPlayer, landedPlatform } = updatePlayer(
         state.player,
@@ -390,18 +398,71 @@ const BounceRunner: React.FC = () => {
         state.baseSpeed,
         speedMultiplier,
         state.isHoldingJump,
-        timeFactor // Pass time factor for frame-rate independent physics
+        timeFactor
       )
       state.player = updatedPlayer
 
-      const theme = THEMES.find(t => t.id === currentThemeId) || THEMES[0]
+      const distanceScore = state.player.x / 100
+      state.score = distanceScore + state.bonusScore
+
+      // === THEME TRANSITION BASED ON DISTANCE ===
+      const newTheme = getThemeForDistance(distanceScore)
+      if (newTheme.id !== state.currentThemeId) {
+        console.log(`Theme changed from ${state.currentThemeId} to ${newTheme.id} at score ${distanceScore}`)
+
+        // Store old theme for transition effect
+        const oldTheme = THEMES.find(t => t.id === state.currentThemeId)
+
+        // Update theme
+        state.currentThemeId = newTheme.id
+        setCurrentThemeId(newTheme.id)
+
+        // Trigger flash effect
+        setThemeFlash(true)
+        setTimeout(() => setThemeFlash(false), 500)
+
+        // Create spectacular transition effect
+        state.particles.push(
+          ...createThemeTransitionEffect(
+            state.player.x + state.player.width / 2,
+            state.player.y + state.player.height / 2,
+            newTheme
+          )
+        )
+
+        // Show big unlock text
+        state.floatingTexts.push({
+          x: state.player.x + state.player.width / 2,
+          y: state.player.y - 100,
+          text: `⚡ ${newTheme.name.toUpperCase()} POWER! ⚡`,
+          life: 180,
+          color: newTheme.primary,
+          vy: -0.5
+        })
+
+        // Additional floating text
+        state.floatingTexts.push({
+          x: state.player.x + state.player.width / 2,
+          y: state.player.y - 60,
+          text: `${newTheme.unlockScore.toLocaleString()}m MILESTONE!`,
+          life: 150,
+          color: '#FFFFFF',
+          vy: -1
+        })
+
+        // Play sound effect multiple times for emphasis
+        audioManager.playJump()
+        setTimeout(() => audioManager.playJump(), 100)
+        setTimeout(() => audioManager.playJump(), 200)
+      }
+
+      const theme = THEMES.find(t => t.id === state.currentThemeId) || THEMES[0]
       const settings = performanceManager.getSettings()
       const particleMultiplier = settings.reducedParticles ? 0.5 : 1.0
 
       // Item Collisions
       const events = checkItemCollisions(state.player, state.platforms)
       events.forEach(evt => {
-        // Create Visual text
         state.floatingTexts.push({
           x: state.player.x + state.player.width / 2,
           y: state.player.y - 20,
@@ -414,22 +475,19 @@ const BounceRunner: React.FC = () => {
         state.bonusScore += evt.scoreDelta
 
         if (evt.type === 'bonus') {
-          state.particles.push(...createExplosion(state.player.x, state.player.y, '#44FF44', particleMultiplier))
-          // Play collect sound (reuse jump for now or add new)
+          state.coinsCollected++
+          state.particles.push(...createExplosion(state.player.x, state.player.y, '#FFD700', particleMultiplier))
         } else {
-          // Reduce speed slightly on penalty?
-          // state.baseSpeed *= 0.8
           state.particles.push(...createExplosion(state.player.x, state.player.y, '#FF4444', particleMultiplier))
         }
       })
 
-      // Land Sound & Logic with Combo System
+      // Land Sound & Combo
       if (!wasGrounded && state.player.isGrounded) {
         audioManager.playLand()
 
-        // Combo System - reward quick successive landings
         const timeSinceLastLand = Date.now() - state.player.lastLandTime
-        const comboWindow = 1500 // 1.5 seconds to maintain combo
+        const comboWindow = 1500
 
         if (timeSinceLastLand < comboWindow && state.player.lastLandTime > 0) {
           state.player.comboCount++
@@ -437,12 +495,10 @@ const BounceRunner: React.FC = () => {
           state.player.comboCount = 1
         }
 
-        // Combo rewards and visual feedback
         if (state.player.comboCount > 1) {
           const comboBonus = state.player.comboCount * 10
           state.bonusScore += comboBonus
 
-          // Combo text with increasing intensity
           const comboColor = state.player.comboCount >= 5 ? '#FFD700' :
             state.player.comboCount >= 3 ? '#FF00FF' : '#00FFFF'
 
@@ -455,25 +511,21 @@ const BounceRunner: React.FC = () => {
             vy: -2.5
           })
 
-          // Enhanced particle effects for combos
           state.particles.push(
             ...createExplosion(state.player.x + state.player.width / 2, state.player.y + state.player.height, comboColor, particleMultiplier),
             ...createExplosion(state.player.x + state.player.width / 2, state.player.y + state.player.height, '#FFFFFF', particleMultiplier * 0.5)
           )
         } else {
-          // Regular landing particles
           state.particles.push(
             ...createExplosion(state.player.x + state.player.width / 2, state.player.y + state.player.height, theme.accent, particleMultiplier)
           )
         }
 
-        // Handle special platforms
         if (landedPlatform) {
           const pType = PLATFORM_TYPES[landedPlatform.type]
           if (pType && pType.scoreBonus !== 0) {
             state.bonusScore += pType.scoreBonus
 
-            // Floating Text for Platform Bonus
             state.floatingTexts.push({
               x: state.player.x + state.player.width / 2,
               y: state.player.y - 40,
@@ -483,7 +535,6 @@ const BounceRunner: React.FC = () => {
               vy: -1.5
             })
 
-            // Special visual for bonus
             if (pType.scoreBonus > 0) {
               state.particles.push(
                 ...createExplosion(state.player.x, state.player.y, '#FFD700', particleMultiplier)
@@ -495,15 +546,19 @@ const BounceRunner: React.FC = () => {
 
       state.cameraX = state.player.x - PLAYER_X_OFFSET
 
-      const distanceScore = state.player.x / 100
-      state.score = distanceScore + state.bonusScore
-
-      // Update score display less frequently for performance
+      // Update React state periodically
       if (Math.floor(currentTime / 100) !== Math.floor((currentTime - deltaTime) / 100)) {
         setScore(state.score)
+        setCoins(state.coinsCollected)
+        setCombo(state.player.comboCount)
+        // Track max combo
+        if (state.player.comboCount > maxComboRef.current) {
+          maxComboRef.current = state.player.comboCount
+          setMaxCombo(state.player.comboCount)
+        }
       }
 
-      // 3. Platform Gen
+      // Platform Gen
       const rightMost = state.platforms[state.platforms.length - 1]
       if (rightMost.x < state.cameraX + CANVAS_WIDTH + 800) {
         const diff = Math.min(state.baseSpeed / INITIAL_SPEED, 2.0)
@@ -511,21 +566,18 @@ const BounceRunner: React.FC = () => {
       }
       state.platforms = state.platforms.filter(p => p.x + p.width > state.cameraX - 1000)
 
-      // 4. Game Over Check
+      // Game Over Check
       if (state.player.y > CANVAS_HEIGHT) {
         handleGameOver()
-        // Don't return, keep drawing the death frame
       }
 
-      // 5. Particles with frame-rate independence
+      // Update particles and texts
       state.particles = updateParticles(state.particles, timeFactor)
-
-      // 6. Floating Texts with frame-rate independence
       state.floatingTexts = updateFloatingTexts(state.floatingTexts, timeFactor)
     }
 
     // Draw
-    const theme = THEMES.find(t => t.id === currentThemeId) || THEMES[0]
+    const theme = THEMES.find(t => t.id === gameState.current.currentThemeId) || THEMES[0]
     const speedPhase = getSpeedMultiplier(state.tick)
 
     drawGame(
@@ -544,7 +596,7 @@ const BounceRunner: React.FC = () => {
     )
 
     requestRef.current = requestAnimationFrame(loop)
-  }, [status, currentThemeId, backgroundEnabled])
+  }, [backgroundEnabled])
 
   const handleGameOver = () => {
     gameState.current.isRunning = false
@@ -558,36 +610,29 @@ const BounceRunner: React.FC = () => {
       setHighScore(finalScore)
     }
 
-    // Unlock Logic
-    const newUnlocks = [...unlockedThemes]
-    let changed = false
-    THEMES.forEach(t => {
-      if (!newUnlocks.includes(t.id) && finalScore >= t.unlockScore) {
-        newUnlocks.push(t.id)
-        changed = true
-      }
-    })
+    // Save with new high score
+    persistData(Math.max(finalScore, highScore))
 
-    if (changed) setUnlockedThemes(newUnlocks)
+    // Set theme to highest unlocked for menu display
+    const bestTheme = getHighestUnlockedThemeId(Math.max(finalScore, highScore))
+    setCurrentThemeId(bestTheme)
 
-    // Save
-    persistData(newHigh, newUnlocks)
     setStatus(GameStatus.GAME_OVER)
   }
 
-  const handleThemeSelect = (id: string) => {
-    setCurrentThemeId(id)
-    const data: SaveData = {
-      highScore,
-      unlockedThemes,
-      selectedThemeId: id,
-      totalDistance: 0
+  // Update background color based on score progress
+  useEffect(() => {
+    if (status === GameStatus.PLAYING) {
+      const interpolatedColor = getInterpolatedThemeColor(score)
+      setBackgroundColor(interpolatedColor)
+    } else {
+      // Use current theme color when not playing
+      const theme = THEMES.find(t => t.id === currentThemeId) || THEMES[0]
+      setBackgroundColor(theme.primary)
     }
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data))
-  }
+  }, [score, status, currentThemeId])
 
   useEffect(() => {
-    // Initialize with current time
     gameState.current.lastUpdateTime = performance.now()
     requestRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(requestRef.current)
@@ -598,14 +643,25 @@ const BounceRunner: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
+      {/* Theme transition flash effect */}
+      {themeFlash && (
+        <div
+          className="absolute inset-0 z-50 pointer-events-none animate-pulse"
+          style={{
+            backgroundColor: currentTheme.primary,
+            opacity: 0.3,
+            animation: 'flash 0.5s ease-out'
+          }}
+        />
+      )}
 
-      {/* 3D Background Layer - conditionally rendered based on performance */}
+      {/* 3D Background Layer */}
       {backgroundEnabled && (
-        <div className="absolute inset-0 z-0 opacity-80">
+        <div className="absolute inset-0 z-0 opacity-80 transition-all duration-1000">
           <PixelBlast
             variant="circle"
             pixelSize={6}
-            color={currentTheme.primary}
+            color={backgroundColor}
             patternScale={3}
             patternDensity={1.2}
             pixelSizeJitter={0.5}
@@ -613,7 +669,7 @@ const BounceRunner: React.FC = () => {
             rippleSpeed={0.4}
             rippleThickness={0.12}
             rippleIntensityScale={1.5}
-            liquid={pixelRatio > 1} // Only enable liquid on higher-end displays
+            liquid={pixelRatio > 1}
             liquidStrength={0.12}
             liquidRadius={1.2}
             liquidWobbleSpeed={5}
@@ -624,13 +680,13 @@ const BounceRunner: React.FC = () => {
         </div>
       )}
 
-      {/* Full width container, remove max constraints */}
+      {/* Full width container */}
       <div className="relative w-full h-full flex items-center justify-center shadow-2xl z-10">
-        {/* Glow border based on current theme - Optional, made subtle to fit full screen */}
+        {/* Glow border based on current theme */}
         <div
-          className="absolute inset-0 pointer-events-none transition-all duration-1000 z-20"
+          className="absolute inset-0 pointer-events-none transition-all duration-500 z-20"
           style={{
-            boxShadow: `inset 0 0 50px ${currentTheme.primary}20`
+            boxShadow: `inset 0 0 100px ${currentTheme.primary}40, inset 0 0 200px ${currentTheme.primary}20`
           }}
         />
 
@@ -641,7 +697,7 @@ const BounceRunner: React.FC = () => {
           className="w-full h-full object-contain z-10"
           style={{
             aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}`,
-            imageRendering: 'auto' // Let browser handle scaling
+            imageRendering: 'auto'
           }}
         />
 
@@ -650,19 +706,28 @@ const BounceRunner: React.FC = () => {
           score={score}
           highScore={highScore}
           currentThemeId={currentThemeId}
-          unlockedThemes={unlockedThemes}
+          coins={coins}
+          combo={combo}
+          maxCombo={maxCombo}
           onStart={initGame}
           onRestart={initGame}
-          onSelectTheme={handleThemeSelect}
         />
 
-        {/* FPS Counter for debugging - remove in production */}
+        {/* FPS Counter */}
         {process.env.NODE_ENV === 'development' && (
-          <div className="absolute top-2 right-2 text-xs text-white/50 font-mono z-30">
-            {currentFPS} FPS
+          <div className="absolute bottom-2 right-2 text-xs text-white/30 font-mono z-30">
+            {currentFPS} FPS | Theme: {currentThemeId}
           </div>
         )}
       </div>
+
+      {/* CSS for flash animation */}
+      <style>{`
+        @keyframes flash {
+          0% { opacity: 0.5; }
+          100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   )
 }
