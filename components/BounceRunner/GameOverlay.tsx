@@ -15,18 +15,18 @@ interface GameOverlayProps {
   onSelectTheme: (id: string) => void;
 }
 
-const GameOverlay: React.FC<GameOverlayProps> = ({ 
-  status, 
-  score, 
-  highScore, 
+const GameOverlay: React.FC<GameOverlayProps> = ({
+  status,
+  score,
+  highScore,
   currentThemeId,
   unlockedThemes,
-  onStart, 
+  onStart,
   onRestart,
   onSelectTheme
 }) => {
   const [showThemes, setShowThemes] = useState(false);
-  
+
   if (status === GameStatus.PLAYING) {
     return (
       <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start pointer-events-none select-none z-20">
@@ -56,7 +56,7 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
           {THEMES.map(theme => {
             const isUnlocked = unlockedThemes.includes(theme.id);
             const isSelected = currentThemeId === theme.id;
-            
+
             return (
               <button
                 key={theme.id}
@@ -68,9 +68,9 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
                   ${!isUnlocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                 `}
               >
-                <div 
-                  className="w-6 h-6 rounded-full shadow-lg" 
-                  style={{ backgroundColor: theme.primary, boxShadow: `0 0 10px ${theme.primary}` }} 
+                <div
+                  className="w-6 h-6 rounded-full shadow-lg"
+                  style={{ backgroundColor: theme.primary, boxShadow: `0 0 10px ${theme.primary}` }}
                 />
                 <span className="text-[10px] text-gray-300 uppercase">{theme.name}</span>
                 {!isUnlocked && (
@@ -96,16 +96,15 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
             BOUNCE
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#733DF2] to-[#00F0FF]">RUNNER</span>
           </h1>
-          <p className="text-gray-400 text-lg md:text-xl font-light tracking-wide flex items-center justify-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"/>
-            SYSTEM READY
+          <p className="text-gray-100 text-lg md:text-xl mt-4 max-w-md mx-auto font-light">
+            While we're building your app, vibe in with a mini game. We'll tune in your preview as it will be ready to roll.
           </p>
         </div>
-        
+
         <div className="flex gap-4">
-          <Button 
-            label="INITIATE RUN" 
-            onClick={onStart} 
+          <Button
+            label="INITIATE RUN"
+            onClick={onStart}
             className="start-btn"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,7 +112,7 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
               </svg>
             }
           />
-          <Button 
+          <Button
             variant="secondary"
             label="CUSTOMIZE"
             onClick={() => setShowThemes(true)}
@@ -133,7 +132,7 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0f0f17]/90 backdrop-blur-md z-10 animate-fade-in">
         <div className="mb-2 text-[#ff4444] tracking-widest uppercase text-sm animate-pulse">Connection Lost</div>
         <h2 className="text-5xl md:text-7xl text-white mb-6">TERMINATED</h2>
-        
+
         <div className="flex gap-12 mb-10 text-center relative">
           <div className="relative group">
             <div className="text-gray-500 text-xs uppercase mb-1">Session Distance</div>
@@ -143,7 +142,7 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
             <div className="text-gray-500 text-xs uppercase mb-1">Record</div>
             <div className="text-5xl text-[#733DF2]">{Math.floor(highScore)}m</div>
           </div>
-          
+
           {nextUnlock && (
             <div className="absolute top-[-60px] left-1/2 transform -translate-x-1/2 w-max bg-gradient-to-r from-yellow-500 to-orange-500 text-black px-4 py-1 rounded-full text-xs shadow-lg animate-bounce">
               NEW CORE UNLOCKED: {nextUnlock.name}
@@ -152,17 +151,17 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
         </div>
 
         <div className="flex gap-4">
-          <Button 
-            label="RETRY" 
+          <Button
+            label="RETRY"
             onClick={onRestart}
             variant="primary"
             icon={
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-            } 
+            }
           />
-           <Button 
+          <Button
             variant="secondary"
             label="CUSTOMIZE"
             onClick={() => setShowThemes(true)}
