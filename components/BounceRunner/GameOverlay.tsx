@@ -92,13 +92,14 @@ const GameOverlay: React.FC<GameOverlayProps> = ({
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0f0f17]/80 backdrop-blur-sm z-10">
         <div className="mb-12 text-center animate-fade-in-up">
-          <h1 className="text-6xl md:text-8xl text-white mb-2 drop-shadow-[0_0_25px_rgba(115,61,242,0.6)]">
-            BOUNCE
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#733DF2] to-[#00F0FF]">RUNNER</span>
+          <h1 className="text-gray-100 text-2xl md:text-6xl mt-4 max-w-2xl mx-auto font-light text-transparent bg-clip-text bg-gradient-to-r from-[#733DF2] to-[#00F0FF]">
+            While we're building your app, vibe in with a mini game. 
           </h1>
-          <p className="text-gray-100 text-lg md:text-xl mt-4 max-w-md mx-auto font-light">
-            While we're building your app, vibe in with a mini game. We'll tune in your preview as it will be ready to roll.
-          </p>
+
+          <h1 className="text-xl md:text-2xl text-white mt-5 drop-shadow-[0_0_25px_rgba(115,61,242,0.6)]">
+            We'll tune in your preview as it will be ready to roll.
+          </h1>
+
         </div>
 
         <div className="flex gap-4">
