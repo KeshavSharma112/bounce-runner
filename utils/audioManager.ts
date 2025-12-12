@@ -2,8 +2,6 @@
 class AudioManager {
   ctx: AudioContext | null = null;
   masterGain: GainNode | null = null;
-  droneOsc: OscillatorNode | null = null;
-  droneGain: GainNode | null = null;
   isMuted: boolean = false;
 
   constructor() {
@@ -12,56 +10,19 @@ class AudioManager {
 
   init() {
     if (this.ctx) return;
-    
+
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     this.ctx = new AudioContextClass();
-    
+
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = 0.3; // Low master volume
     this.masterGain.connect(this.ctx.destination);
-
-    this.startDrone();
   }
 
   resume() {
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
-  }
-
-  startDrone() {
-    if (!this.ctx || !this.masterGain) return;
-
-    // Background drone for speed sensation
-    this.droneOsc = this.ctx.createOscillator();
-    this.droneGain = this.ctx.createGain();
-    
-    this.droneOsc.type = 'sawtooth';
-    this.droneOsc.frequency.value = 50; // Low rumble
-    this.droneGain.gain.value = 0.0; // Start silent
-
-    // Lowpass filter to muffle the drone
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 200;
-
-    this.droneOsc.connect(filter);
-    filter.connect(this.droneGain);
-    this.droneGain.connect(this.masterGain);
-    
-    this.droneOsc.start();
-  }
-
-  updateDrone(speedRatio: number) {
-    if (!this.ctx || !this.droneOsc || !this.droneGain) return;
-    
-    // Pitch rises with speed
-    const targetFreq = 50 + (speedRatio * 50); 
-    this.droneOsc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.1);
-
-    // Volume rises with speed
-    const targetVol = 0.1 + (speedRatio * 0.1);
-    this.droneGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.1);
   }
 
   playJump() {

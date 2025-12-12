@@ -379,9 +379,6 @@ const BounceRunner: React.FC = () => {
       }
       const speedMultiplier = getSpeedMultiplier(state.tick)
 
-      // Update Audio Drone
-      audioManager.updateDrone((state.baseSpeed * speedMultiplier) / MAX_SPEED)
-
       // 2. Physics with frame-rate independence
       const wasGrounded = state.player.isGrounded
       const { updatedPlayer, landedPlatform } = updatePlayer(
